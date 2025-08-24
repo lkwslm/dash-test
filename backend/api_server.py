@@ -5,6 +5,7 @@ import json
 import time
 from datetime import datetime
 from defect_detector import DefectDetector
+from neural_network_detector import neural_detector
 import threading
 import uuid
 
@@ -201,6 +202,124 @@ def clear_history():
         'timestamp': datetime.now().isoformat()
     })
 
+# 神经网络检测相关接口
+@app.route('/api/neural/detect', methods=['POST'])
+def neural_detect():
+    """神经网络缺陷检测接口"""
+    try:
+        data = request.get_json()
+        
+        if not data or 'image' not in data:
+            return jsonify({
+                'error': 'No image data provided',
+                'status': 'error'
+            }), 400
+        
+        image_data = data['image']
+        model_type = data.get('model_type', 'cnn_classification')
+        model_name = data.get('model_name', 'simple_cnn')
+        
+        # 生成唯一ID
+        detection_id = str(uuid.uuid4())
+        
+        # 执行神经网络检测
+        result = neural_detector.detect(image_data, model_type)
+        
+        # 添加额外信息
+        result['detection_id'] = detection_id
+        result['model_name'] = model_name
+        result['timestamp'] = datetime.now().isoformat()
+        
+        # 保存到历史记录
+        with detection_lock:
+            detection_history.append({
+                'id': detection_id,
+                'timestamp': result['timestamp'],
+                'method': f'neural_{model_type}',
+                'defects_found': result.get('defects_found', 0),
+                'confidence_score': result.get('confidence_score', 0.0),
+                'processing_time': result.get('processing_time', 0.0),
+                'status': result.get('status', 'unknown')
+            })
+            
+            # 保持历史记录在合理范围内
+            if len(detection_history) > 100:
+                detection_history.pop(0)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'status': 'error',
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+@app.route('/api/neural/models', methods=['GET'])
+def get_neural_models():
+    """获取可用的神经网络模型"""
+    try:
+        models = neural_detector.get_available_models()
+        return jsonify({
+            'models': models,
+            'total_models': len(models),
+            'default_model': 'simple_cnn'
+        })
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 500
+
+@app.route('/api/neural/models/<model_name>', methods=['GET'])
+def get_model_info(model_name):
+    """获取特定模型的详细信息"""
+    try:
+        model_info = neural_detector.get_model_info(model_name)
+        return jsonify(model_info)
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 404
+
+@app.route('/api/neural/statistics', methods=['GET'])
+def get_neural_statistics():
+    """获取神经网络检测统计信息"""
+    with detection_lock:
+        # 筛选神经网络检测记录
+        neural_history = [
+            h for h in detection_history 
+            if h['method'].startswith('neural_')
+        ]
+        
+        if not neural_history:
+            return jsonify({
+                'total_neural_detections': 0,
+                'avg_confidence': 0.0,
+                'avg_processing_time': 0.0,
+                'model_usage': {}
+            })
+        
+        # 计算统计信息
+        total_detections = len(neural_history)
+        avg_confidence = sum(h['confidence_score'] for h in neural_history) / total_detections
+        avg_processing_time = sum(h['processing_time'] for h in neural_history) / total_detections
+        
+        # 模型使用统计
+        model_usage = {}
+        for h in neural_history:
+            model_type = h['method'].replace('neural_', '')
+            model_usage[model_type] = model_usage.get(model_type, 0) + 1
+        
+        return jsonify({
+            'total_neural_detections': total_detections,
+            'avg_confidence': round(avg_confidence, 3),
+            'avg_processing_time': round(avg_processing_time, 3),
+            'model_usage': model_usage,
+            'success_rate': round(sum(1 for h in neural_history if h['status'] == 'success') / total_detections * 100, 1)
+        })
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({
@@ -224,5 +343,9 @@ if __name__ == '__main__':
     print("  GET  /api/history - Get detection history")
     print("  GET  /api/statistics - Get detailed statistics")
     print("  POST /api/clear_history - Clear detection history")
+    print("  POST /api/neural/detect - Neural network defect detection")
+    print("  GET  /api/neural/models - Get available neural models")
+    print("  GET  /api/neural/models/<name> - Get model info")
+    print("  GET  /api/neural/statistics - Get neural detection statistics")
     
     app.run(host='0.0.0.0', port=8080, debug=True)

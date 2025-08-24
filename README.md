@@ -1,25 +1,24 @@
 # 智能缺陷检测系统
 
-基于Dash和Flask构建的智能缺陷检测应用，使用HTTP通信实现前后端分离架构。
+基于Dash和Flask构建的智能缺陷检测应用，支持传统图像处理算法和神经网络算法，使用HTTP通信实现前后端分离架构。
 
 ## 系统架构
 
 ```
-┌─────────────────┐    HTTP API    ┌─────────────────┐
-│   Dash 前端     │ ◄─────────────► │   Flask 后端    │
-│   (端口 12000)  │                │   (端口 8080)   │
-└─────────────────┘                └─────────────────┘
-        │                                   │
-        │                                   │
-        ▼                                   ▼
-┌─────────────────┐                ┌─────────────────┐
-│   用户界面      │                │   缺陷检测算法   │
-│   - 图像上传    │                │   - 边缘检测    │
-│   - 结果展示    │                │   - 阈值分析    │
-│   - 历史记录    │                │   - 纹理分析    │
-│   - 统计图表    │                │   - 颜色聚类    │
-└─────────────────┘                │   - 形态学分析  │
-                                   └─────────────────┘
+┌─────────────────┐    HTTP/REST API   ┌─────────────────┐
+│   Dash 前端     │ ◄─────────────────► │   Flask 后端    │
+│   (端口 12000)  │                    │   (端口 8080)   │
+└─────────────────┘                    └─────────────────┘
+        │                                       │
+        ▼                                       ▼
+┌─────────────────┐                    ┌─────────────────┐
+│   用户界面      │                    │   检测算法引擎   │
+│ - 图像上传      │                    │ - 6种传统算法   │
+│ - 结果展示      │                    │ - 神经网络算法  │
+│ - 历史记录      │                    │ - 统计分析      │
+│ - 统计图表      │                    │ - 历史管理      │
+│ - 神经网络选项  │                    │ - 性能监控      │
+└─────────────────┘                    └─────────────────┘
 ```
 
 ## 功能特性
@@ -40,9 +39,12 @@
   - 颜色聚类 (K-means)
   - 形态学分析
   - 综合检测
+  - 神经网络检测 (CNN分类)
 - 📊 **统计分析**: 检测结果统计和性能分析
 - 💾 **历史管理**: 检测历史存储和管理
 - 🔌 **RESTful API**: 标准化的API接口
+- 🤖 **神经网络支持**: PyTorch深度学习框架
+- 📈 **模型管理**: 神经网络模型管理和扩展
 
 ## 安装和运行
 
@@ -95,9 +97,31 @@ Content-Type: application/json
 }
 ```
 
+### 神经网络检测
+```
+POST /api/neural/detect
+Content-Type: application/json
+
+{
+    "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+    "model_type": "cnn_classification",
+    "model_name": "simple_cnn"
+}
+```
+
 ### 获取检测方法
 ```
 GET /api/methods
+```
+
+### 获取神经网络模型
+```
+GET /api/neural/models
+```
+
+### 获取模型详情
+```
+GET /api/neural/models/{model_name}
 ```
 
 ### 获取检测历史
@@ -108,6 +132,11 @@ GET /api/history?limit=10
 ### 获取统计信息
 ```
 GET /api/statistics
+```
+
+### 获取神经网络统计
+```
+GET /api/neural/statistics
 ```
 
 ### 清除历史记录
@@ -153,7 +182,8 @@ POST /api/clear_history
 project/
 ├── backend/                 # 后端代码
 │   ├── api_server.py       # Flask API服务器
-│   └── defect_detector.py  # 缺陷检测算法
+│   ├── defect_detector.py  # 传统缺陷检测算法
+│   └── neural_network_detector.py  # 神经网络检测算法
 ├── frontend/               # 前端代码
 │   └── dash_app.py        # Dash应用界面
 ├── assets/                 # 静态资源
@@ -161,6 +191,7 @@ project/
 ├── requirements.txt       # 依赖包列表
 ├── start_app.py          # 应用启动脚本
 ├── test_api.py           # API测试脚本
+├── test_neural_api.py    # 神经网络API测试脚本
 └── README.md             # 项目说明
 ```
 
@@ -171,12 +202,18 @@ project/
 python test_api.py
 ```
 
+运行神经网络API测试脚本：
+```bash
+python test_neural_api.py
+```
+
 ## 技术栈
 
 - **前端**: Dash, Plotly, Bootstrap
 - **后端**: Flask, OpenCV, scikit-image, scikit-learn
 - **图像处理**: OpenCV, PIL, NumPy
 - **机器学习**: scikit-learn, scikit-image
+- **深度学习**: PyTorch, torchvision
 - **通信**: HTTP/REST API, JSON
 
 ## 特性亮点
