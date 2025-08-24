@@ -56,6 +56,7 @@ app.layout = dbc.Container([
                         },
                         multiple=False
                     ),
+                    html.Div(id='upload-progress', className='mt-2'),
                     
                     html.Hr(),
                     
@@ -75,15 +76,16 @@ app.layout = dbc.Container([
                         className="mb-3"
                     ),
                     
-                    # 检测按钮
+                    # 检测按钮和进度显示
                     dbc.Button(
                         "开始检测",
                         id="detect-button",
                         color="primary",
                         size="lg",
-                        className="w-100 mb-3",
+                        className="w-100 mb-2",
                         disabled=True
                     ),
+                    html.Div(id='detection-progress', className='mb-2'),
                     
                     html.Hr(),
                     
@@ -166,13 +168,33 @@ app.layout = dbc.Container([
     
 ], fluid=True)
 
+# 回调函数：显示上传进度
+@app.callback(
+    Output('upload-progress', 'children'),
+    [Input('upload-image', 'contents')],
+    prevent_initial_call=True
+)
+def update_upload_progress(contents):
+    if contents is None:
+        return html.Div("等待上传图像...", className="text-muted small")
+    
+    return dbc.Progress(
+        value=100, 
+        striped=True, 
+        animated=True, 
+        label="上传完成!",
+        color="success",
+        className="mb-2"
+    )
+
 # 回调函数：处理图像上传
 @app.callback(
     [Output('uploaded-image-data', 'data'),
-     Output('detect-button', 'disabled'),
-     Output('image-display', 'children')],
+     Output('detect-button', 'disabled', allow_duplicate=True),
+     Output('image-display', 'children', allow_duplicate=True)],
     [Input('upload-image', 'contents')],
-    [State('image-tabs', 'active_tab')]
+    [State('image-tabs', 'active_tab')],
+    prevent_initial_call=True
 )
 def handle_image_upload(contents, active_tab):
     if contents is None:
@@ -198,17 +220,32 @@ def handle_image_upload(contents, active_tab):
     except Exception as e:
         return None, True, html.Div(f"图像上传失败: {str(e)}", className="text-danger")
 
-# 回调函数：执行缺陷检测
+# 回调函数：执行缺陷检测（合并进度显示和检测执行）
 @app.callback(
     [Output('detection-result-data', 'data'),
-     Output('detection-results', 'children')],
+     Output('detection-results', 'children'),
+     Output('detection-progress', 'children'),
+     Output('detect-button', 'disabled', allow_duplicate=True),
+     Output('detect-button', 'color', allow_duplicate=True)],
     [Input('detect-button', 'n_clicks')],
     [State('uploaded-image-data', 'data'),
-     State('detection-method', 'value')]
+     State('detection-method', 'value')],
+    prevent_initial_call=True,
+    background=True,
+    running=[
+        (Output('detection-progress', 'children'), dbc.Progress(value=0, striped=True, animated=True, label="检测中...", color="info", className="mb-2"), ""),
+        (Output('detect-button', 'disabled', allow_duplicate=True), True, False),
+        (Output('detect-button', 'color', allow_duplicate=True), "secondary", "primary")
+    ]
 )
 def perform_detection(n_clicks, image_data, method):
+    ctx = callback_context
+    
+    if not ctx.triggered:
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+    
     if n_clicks is None or image_data is None:
-        return None, html.Div("请先上传图像", className="text-muted")
+        return None, html.Div("请先上传图像", className="text-muted"), html.Div("请先上传图像", className="text-muted small"), True, "primary"
     
     try:
         # 发送检测请求
@@ -259,14 +296,14 @@ def perform_detection(n_clicks, image_data, method):
                     result_display.append(html.H6("缺陷详情:"))
                     result_display.append(defects_table)
                 
-                return result, result_display
+                return result, result_display, None, False, "primary"
             else:
-                return result, dbc.Alert(f"检测失败: {result.get('error_message', '未知错误')}", color="danger")
+                return result, dbc.Alert(f"检测失败: {result.get('error_message', '未知错误')}", color="danger"), None, False, "primary"
         else:
-            return None, dbc.Alert("API请求失败", color="danger")
+            return None, dbc.Alert("API请求失败", color="danger"), None, False, "primary"
             
     except Exception as e:
-        return None, dbc.Alert(f"检测过程中出现错误: {str(e)}", color="danger")
+        return None, dbc.Alert(f"检测过程中出现错误: {str(e)}", color="danger"), None, False, "primary"
 
 # 回调函数：更新图像显示
 @app.callback(
@@ -468,6 +505,17 @@ def clear_history(n_clicks):
     return "清除历史"
 
 if __name__ == '__main__':
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Defect Detection Dashboard')
+    parser.add_argument('--port', type=int, default=12000, help='Port to run the dashboard on')
+    parser.add_argument('--api-port', type=int, default=8080, help='Port of the API server')
+    args = parser.parse_args()
+    
+    # 更新API基础URL
+    API_BASE_URL = f"http://localhost:{args.api_port}/api"
+    
     print("Starting Defect Detection Dashboard...")
-    print("Dashboard will be available at: http://localhost:12000")
-    app.run(host='0.0.0.0', port=12000, debug=True)
+    print(f"Dashboard will be available at: http://localhost:{args.port}")
+    print(f"API server at: {API_BASE_URL}")
+    app.run(host='0.0.0.0', port=args.port, debug=True)

@@ -51,6 +51,13 @@ def detect_defects():
         # 生成唯一ID
         detection_id = str(uuid.uuid4())
         
+        # 记录用户操作日志
+        client_ip = request.remote_addr
+        user_agent = request.headers.get('User-Agent', 'Unknown')
+        timestamp = datetime.now().isoformat()
+        
+        print(f"[{timestamp}] 检测请求 - ID: {detection_id}, 方法: {method}, IP: {client_ip}, User-Agent: {user_agent}")
+        
         # 执行检测
         start_time = time.time()
         result = detector.detect_defects(image_data, method)
@@ -59,7 +66,7 @@ def detect_defects():
         # 添加额外信息
         result['detection_id'] = detection_id
         result['processing_time'] = round(processing_time, 3)
-        result['timestamp'] = datetime.now().isoformat()
+        result['timestamp'] = timestamp
         
         # 保存到历史记录
         with detection_lock:
@@ -70,20 +77,28 @@ def detect_defects():
                 'defects_found': result.get('defects_found', 0),
                 'confidence_score': result.get('confidence_score', 0.0),
                 'processing_time': processing_time,
-                'status': result.get('status', 'unknown')
+                'status': result.get('status', 'unknown'),
+                'client_ip': client_ip
             })
             
             # 保持历史记录在合理范围内
             if len(detection_history) > 100:
                 detection_history.pop(0)
         
+        # 记录检测结果日志
+        defects_count = result.get('defects_found', 0)
+        confidence = result.get('confidence_score', 0.0)
+        print(f"[{timestamp}] 检测完成 - ID: {detection_id}, 缺陷数量: {defects_count}, 置信度: {confidence:.2%}, 处理时间: {processing_time:.3f}s")
+        
         return jsonify(result)
         
     except Exception as e:
+        error_time = datetime.now().isoformat()
+        print(f"[{error_time}] 检测错误 - 方法: {data.get('method', 'unknown')}, 错误: {str(e)}")
         return jsonify({
             'error': str(e),
             'status': 'error',
-            'timestamp': datetime.now().isoformat()
+            'timestamp': error_time
         }), 500
 
 @app.route('/api/methods', methods=['GET'])
@@ -335,7 +350,14 @@ def internal_error(error):
     }), 500
 
 if __name__ == '__main__':
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Defect Detection API Server')
+    parser.add_argument('--port', type=int, default=8080, help='Port to run the server on')
+    args = parser.parse_args()
+    
     print("Starting Defect Detection API Server...")
+    print(f"Server will run on port: {args.port}")
     print("Available endpoints:")
     print("  GET  /api/health - Health check")
     print("  POST /api/detect - Detect defects in image")
@@ -348,4 +370,4 @@ if __name__ == '__main__':
     print("  GET  /api/neural/models/<name> - Get model info")
     print("  GET  /api/neural/statistics - Get neural detection statistics")
     
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=args.port, debug=True)

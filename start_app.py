@@ -10,25 +10,73 @@ import sys
 import os
 import signal
 import threading
+import socket
 from pathlib import Path
+
+def is_port_in_use(port):
+    """检查端口是否被占用"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(('localhost', port))
+            return False
+        except socket.error:
+            return True
 
 def start_backend():
     """启动后端API服务器"""
     print("正在启动后端API服务器...")
     backend_path = Path(__file__).parent / "backend"
-    os.chdir(backend_path)
+    
+    # 检查端口是否被占用
+    backend_port = 8080
+    if is_port_in_use(backend_port):
+        print(f"⚠ 端口 {backend_port} 已被占用，尝试使用备用端口...")
+        backend_port = 8081
+        if is_port_in_use(backend_port):
+            print(f"✗ 备用端口 {backend_port} 也被占用，无法启动后端")
+            return None
     
     try:
         process = subprocess.Popen([
-            sys.executable, "api_server.py"
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            sys.executable, "api_server.py", "--port", str(backend_port)
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=str(backend_path))
         
-        # 监控后端输出
-        for line in iter(process.stdout.readline, ''):
-            print(f"[后端] {line.strip()}")
-            if "Running on" in line:
-                print("✓ 后端API服务器启动成功!")
-                break
+        # 非阻塞方式读取输出
+        def read_output():
+            try:
+                for line in iter(process.stdout.readline, ''):
+                    if line:
+                        print(f"[后端] {line.strip()}")
+                        if "Running on" in line:
+                            print("✓ 后端API服务器启动成功!")
+                            break
+            except Exception as e:
+                print(f"[后端输出读取错误] {e}")
+        
+        # 启动输出读取线程
+        output_thread = threading.Thread(target=read_output)
+        output_thread.daemon = True
+        output_thread.start()
+        
+        # 等待一段时间让服务器启动，并检查进程状态
+        time.sleep(3)
+        if process.poll() is not None:
+            # 进程已退出，读取错误输出
+            stderr_output = process.stderr.read()
+            if stderr_output:
+                print(f"[后端错误] {stderr_output}")
+            return None
+        
+        # 检查API是否真的可用
+        try:
+            import requests
+            response = requests.get(f"http://localhost:{backend_port}/api/health", timeout=5)
+            if response.status_code == 200:
+                print("✓ 后端API服务器启动成功且健康检查通过!")
+            else:
+                print(f"⚠ 后端API健康检查失败: HTTP {response.status_code}")
+        except Exception as e:
+            print(f"⚠ 后端API健康检查异常: {e}")
         
         return process
     except Exception as e:
@@ -39,19 +87,36 @@ def start_frontend():
     """启动前端Dash应用"""
     print("正在启动前端Dash应用...")
     frontend_path = Path(__file__).parent / "frontend"
-    os.chdir(frontend_path)
+    
+    # 检查端口是否被占用
+    frontend_port = 12000
+    if is_port_in_use(frontend_port):
+        print(f"⚠ 端口 {frontend_port} 已被占用，尝试使用备用端口...")
+        frontend_port = 12001
+        if is_port_in_use(frontend_port):
+            print(f"✗ 备用端口 {frontend_port} 也被占用，无法启动前端")
+            return None
     
     try:
         process = subprocess.Popen([
-            sys.executable, "dash_app.py"
-        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            sys.executable, "dash_app.py", "--port", str(frontend_port)
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=str(frontend_path))
         
-        # 监控前端输出
-        for line in iter(process.stdout.readline, ''):
-            print(f"[前端] {line.strip()}")
-            if "Running on" in line:
-                print("✓ 前端Dash应用启动成功!")
-                break
+        # 非阻塞方式读取输出
+        def read_output():
+            for line in iter(process.stdout.readline, ''):
+                print(f"[前端] {line.strip()}")
+                if "Running on" in line:
+                    print("✓ 前端Dash应用启动成功!")
+                    break
+        
+        # 启动输出读取线程
+        output_thread = threading.Thread(target=read_output)
+        output_thread.daemon = True
+        output_thread.start()
+        
+        # 等待一段时间让应用启动
+        time.sleep(2)
         
         return process
     except Exception as e:
